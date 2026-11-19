@@ -1,0 +1,21 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {parseDouyinUser,parseDouyinDashboard,parseDouyinOverview,douyinLastFinalDay,createDouyinLiveReaders,DY_USER_INFO_PATH,DY_DASHBOARD_PATH,DY_OVERVIEW_ALL_PATH} from '../src/adapters/douyin-live.mjs';
+// Fictional values in the response shapes observed on 2026-11-19.
+const user=JSON.stringify({status_code:0,user:{uid:'1234567890123',nickname:'测试抖音',unique_id:'99887766',short_id:'99887766',follower_count:5,mobile:'138...'}});
+const trend=(name,vals)=>({english_metric_name:name,metric_name:name,metric_value:0,trends:vals.map(([d,v])=>({date_time:d,value:v,douyin_value:v}))});
+const dash=JSON.stringify({status_code:0,metrics:[trend('publish_cnt',[['20261117',1],['20261118',0]]),trend('play_cnt',[['20261117',30],['20261118',0]]),trend('digg_cnt',[['20261117',2],['20261118',0]]),trend('net_fans_cnt',[['20261117',-1],['20261118',0]]),trend('cover_click_ratio',[['20261117',0]]),trend('total_fans_cnt',[['20261117',5]])]});
+const overview=JSON.stringify({status_code:0,data:{new_fans:{option_list:[{date:'2026-11-17',count:'1'},{date:'2026-11-18',count:'0'}]},play:{option_list:[{date:'2026-11-17',count:'30'}]}}});
+const morning=Date.parse('2026-11-19T08:00:00+08:00'),afternoon=Date.parse('2026-11-19T13:00:00+08:00');
+test('Douyin user keeps uid, nickname, 抖音号 and follower count only',()=>{const u=parseDouyinUser(user);assert.deepEqual(u,{userId:'1234567890123',nickname:'测试抖音',redId:'99887766',fansTotal:5});assert.equal(parseDouyinUser('{"status_code":8}'),null);});
+test('a day is final only after next day 12:00 Beijing (no placeholder zeros)',()=>{assert.equal(douyinLastFinalDay(morning),'2026-11-17');assert.equal(douyinLastFinalDay(afternoon),'2026-11-18');
+ assert.ok(parseDouyinDashboard(dash,morning,morning).every(s=>s.day==='2026-11-17'));assert.ok(parseDouyinDashboard(dash,afternoon,afternoon).some(s=>s.day==='2026-11-18'));});
+test('dashboard maps publish/play/digg/net; no impressions; unrelated metrics ignored',()=>{const s=parseDouyinDashboard(dash,morning,morning);const g=m=>s.find(x=>x.metric===m)?.value;
+ assert.equal(g('published'),1);assert.equal(g('views'),30);assert.equal(g('likes'),2);assert.equal(g('followers_net'),-1);assert.equal(g('impressions'),undefined);assert.equal(s.length,4);});
+test('overview gives 新增粉丝 separately from net',()=>{const s=parseDouyinOverview(overview,morning,morning);assert.deepEqual(s.map(x=>[x.day,x.metric,x.value]),[['2026-11-17','followers_gained',1]]);});
+test('bad shapes fail closed',()=>{assert.throws(()=>parseDouyinDashboard('{"status_code":1}',0));assert.throws(()=>parseDouyinDashboard(JSON.stringify({status_code:0,metrics:[trend('play_cnt',[['2026/11/17',1]])]}),0,afternoon));assert.throws(()=>parseDouyinDashboard(JSON.stringify({status_code:0,metrics:[trend('digg_cnt',[['20261117',-2]])]}),0,afternoon));});
+test('identity reader opens nothing while on the login page; reads after login',async()=>{const calls=[];const cap=async o=>{calls.push(o);return {landedUrl:'https://creator.douyin.com/creator-micro/home',captured:new Map([[DY_USER_INFO_PATH,{status:200,body:user,observedAt:Date.now()}]])};};
+ let r=createDouyinLiveReaders({capture:cap,pages:async()=>[{url:'https://creator.douyin.com/'}]});assert.equal((await r.identityReader({port:19418})).verified,false);assert.equal(calls.length,0);
+ r=createDouyinLiveReaders({capture:cap,pages:async()=>[{url:'https://creator.douyin.com/creator-micro/home'}]});const id=await r.identityReader({port:19418});assert.equal(id.verified,true);assert.equal(id.redId,'99887766');});
+test('daily reader refuses if the two page loads belong to different accounts',async()=>{const other=user.replace('1234567890123','5555555555555');let n=0;
+ const cap=async o=>({landedUrl:o.url,captured:new Map([[DY_USER_INFO_PATH,{status:200,body:n++===0?user:other,observedAt:Date.now()}],[DY_DASHBOARD_PATH,{status:200,body:dash,observedAt:Date.now()}],[DY_OVERVIEW_ALL_PATH,{status:200,body:overview,observedAt:Date.now()}]])});
+ const r=createDouyinLiveReaders({capture:cap,now:()=>afternoon});await assert.rejects(r.dailyReader({port:19418}),/changed/);});
