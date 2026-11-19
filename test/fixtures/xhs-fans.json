@@ -1,0 +1,1 @@
+{"fixtureOnly":true,"description":"Synthetic response matching the upstream parser, not user data","data":{"thirty":{"fans_count":42,"fans_list":[{"date":"2026-11-15","count":39},{"date":"2026-11-16","count":41}],"rise_fans_list":[{"date":"2026-11-15","count":2},{"date":"2026-11-16","count":3}],"leave_fans_list":[{"date":"2026-11-15","count":0},{"date":"2026-11-16","count":1}]}}}
