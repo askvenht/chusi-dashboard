@@ -1,0 +1,12 @@
+# 本机私有：各账号浏览器登录状态、访问口令、数据库、日志 —— 永不上传
+data/
+backups/
+*.log
+*.db
+*.db-*
+access-token
+owned-browser.json
+schedule.json
+# 系统/依赖
+.DS_Store
+node_modules/
